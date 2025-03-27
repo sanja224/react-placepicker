@@ -1,17 +1,39 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 
 import Places from './components/Places.jsx';
 import Modal from './components/Modal.jsx';
 import DeleteConfirmation from './components/DeleteConfirmation.jsx';
 import logoImg from './assets/logo.png';
 import AvailablePlaces from './components/AvailablePlaces.jsx';
+import ErrorPage from './components/Error.jsx';
+
 
 function App() {
   const selectedPlace = useRef();
 
   const [userPlaces, setUserPlaces] = useState([]);
-
   const [modalIsOpen, setModalIsOpen] = useState(false);
+  const [error, setErorr] = useState(null);
+  const [isFetching, setIsFetching] = useState(false);
+
+  useEffect(() => {
+    async function fetchUserPlaces() {
+      try {
+        setIsFetching(true);
+        const response = await fetch("http://localhost:3000/user-places");
+        const responseData = await response.json();
+        if (!response.ok) {
+          throw new Error("Could not fetch user places");
+        }
+        setUserPlaces(responseData.places);
+        setIsFetching(false);
+      } catch (err) {
+        setError({ message: err.message || "Something went bad" });
+        setIsFetching(false);
+      }
+    }
+    fetchUserPlaces();
+  }, []);
 
   function handleStartRemovePlace(place) {
     setModalIsOpen(true);
@@ -22,7 +44,7 @@ function App() {
     setModalIsOpen(false);
   }
 
-  function handleSelectPlace(selectedPlace) {
+  async function handleSelectPlace(selectedPlace) {
     setUserPlaces((prevPickedPlaces) => {
       if (!prevPickedPlaces) {
         prevPickedPlaces = [];
@@ -32,6 +54,21 @@ function App() {
       }
       return [selectedPlace, ...prevPickedPlaces];
     });
+
+    try {
+      const response = await fetch("http://localhost:3000/user-places", {
+        method: "PUT",
+        body: JSON.stringify({ places: [selectedPlace, ...userPlaces] }),
+        headers: { "Content-Type": "application/json" }
+      });
+      const responseData = await response.json();
+      if (!response.ok) {
+        throw new Error("Could not add place to visit list");
+      }
+    } catch (err) {
+      setErorr({ message: err.message || "Something went wrong" });
+      setUserPlaces(userPlaces);
+    }
   }
 
   const handleRemovePlace = useCallback(async function handleRemovePlace() {
@@ -39,11 +76,38 @@ function App() {
       prevPickedPlaces.filter((place) => place.id !== selectedPlace.current.id)
     );
 
+    try {
+      const response = await fetch("http://localhost:3000/user-places", {
+        method: "PUT",
+        body: JSON.stringify({ places: userPlaces.filter((place) => place.id !== selectedPlace.current.id) }),
+        headers: { "Content-Type": "application/json" }
+      });
+      const responseData = await response.json();
+      if (!response.ok) {
+        throw new Error("Removing place failed");
+      }
+    } catch (err) {
+      setErorr({ message: err.message || "Removing place failed" });
+      setUserPlaces(userPlaces);
+    }
+
     setModalIsOpen(false);
-  }, []);
+  }, [userPlaces]);
+
+  function resetError() {
+    setErorr(null);
+  }
 
   return (
     <>
+      <Modal open={error ? true : false} onClose={resetError}>
+        {error &&
+          <ErrorPage
+            title="An error occurred!"
+            message={error.message}
+            onConfirm={resetError}>
+          </ErrorPage>}
+      </Modal>
       <Modal open={modalIsOpen} onClose={handleStopRemovePlace}>
         <DeleteConfirmation
           onCancel={handleStopRemovePlace}
